@@ -39,40 +39,64 @@ const scrapWeb = async () => {
       timeout: 60000,
     });
 
-    // Enter United States to the input field
-    await page.waitForSelector("#listusersearchlocations");
-    await page.type("#listusersearchlocations", "United States");
+    // // Enter "United States" into the input field
+    // await page.waitForSelector("#listusersearchlocations");
+    // await page.type("#listusersearchlocations", "United States");
 
-    // await page.waitForSelector("#listuserslocationlist", {
-    //   visible: true,
-    //   timeout: 10000,
-    // });
+    // // Wait for the dropdown list to populate by checking if it contains any div elements
+    // await page.waitForFunction(
+    //   () =>
+    //     document.querySelector("#listuserslocationlist").children.length > 0,
+    //   { timeout: 20000 }
+    // );
+
+    // // Click the first option in the dropdown
     // await page.evaluate(() => {
-    //   let options = document.querySelectorAll("#listuserslocationlist");
-    //   options.forEach((option) => {
-    //     if (option.innerText.includes("United States")) {
-    //       option.click();
-    //     }
-    //   });
+    //   const firstOption = document.querySelector(
+    //     "#listuserslocationlist div.listuserslocation"
+    //   );
+    //   if (firstOption) firstOption.click();
     // });
 
-    await new Promise((resolve) => setTimeout(resolve, 6000));
+    // // Wait for the page to reflect the selection (adjust timeout as needed)
+    // await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Select the region to United States
     await page.waitForSelector('div[data-region="United States"]');
     await page.click('div[data-region="United States"]');
     await new Promise((resolve) => setTimeout(resolve, 6000));
 
+    const cleanProfileData = (profileData) => {
+      const cleanedProfileData = {};
+      for (let key in profileData) {
+        if (typeof profileData[key] === "string") {
+          cleanedProfileData[key] = profileData[key]
+            .replace(/\u00A0/g, " ")
+            .trim(); // Replace non-breaking space with regular space
+        } else if (Array.isArray(profileData[key])) {
+          cleanedProfileData[key] = profileData[key].map((item) =>
+            item.replace(/\u00A0/g, " ").trim()
+          );
+        } else {
+          cleanedProfileData[key] = profileData[key];
+        }
+      }
+      return cleanedProfileData;
+    };
+
     let isLastPage = false;
     while (!isLastPage) {
       const nextButton = await page.$("#userListChangePageNext");
       if (nextButton) {
-        await nextButton.click();
-        // Wait for the next page to load
-        await page.waitForSelector(".grid-table .list tr", {
-          visible: true,
-          timeout: 120000,
-        });
+        for (let i = 0; i < 3; i++) {
+          await nextButton.click();
+          await new Promise((resolve) => setTimeout(resolve, 6000));
+          // Wait for the next page to load
+          await page.waitForSelector(".grid-table .list tr", {
+            visible: true,
+            timeout: 120000,
+          });
+        }
       } else {
         isLastPage = true; // No more pages to scrape
         break;
@@ -101,17 +125,26 @@ const scrapWeb = async () => {
                   `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(1) div:first-child`
                 )?.innerText || "";
 
-              const bio =
+              const occupation =
                 document.querySelector(
-                  `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(1) div:nth-child(2)`
+                  `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(1) div:nth-child(3)`
                 )?.innerText || "";
 
-              const linkedInProfileUrl =
+              const selector =
                 document
                   .querySelector(
                     `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(2) a:nth-of-type(2)`
                   )
-                  ?.getAttribute("href") || "";
+                  .getAttribute("href") || "";
+
+              // Split the selector string on '.'
+              const selectorArray = selector.split(".");
+
+              // Remove the 0th index
+              const filteredArray = selectorArray.slice(1);
+
+              // Combine the 1st and 2nd index elements
+              const linkedInProfileUrl = `${filteredArray[0]}.${filteredArray[1]}`;
 
               const universityName =
                 document.querySelector(
@@ -128,39 +161,42 @@ const scrapWeb = async () => {
                   `.container .row div:nth-child(2) .row:nth-of-type(1) div:last-child`
                 )?.innerText || "";
 
-              const location =
-                document.querySelector(
-                  `.container .row:first-child .panel:nth-child(3) div:nth-of-type(1) span:last-child`
-                )?.innerText || "";
-
-              const industriesNodeList = document.querySelectorAll(
-                `.container .row:first-child .panel:nth-child(3) div:nth-of-type(2) span`
+              // Use document.evaluate to get elements by XPath
+              const industriesNodeList = document.evaluate(
+                "//span[contains(text(), 'Industries:')]/parent::div/span[not(contains(text(), 'Industries:'))]",
+                document,
+                null,
+                XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                null
               );
-              let industriesArr = [...industriesNodeList];
 
-              let industryNames = industriesArr.map((data) => data.textContent);
-              industryNames.shift();
+              let industriesArr = [];
+              for (let i = 0; i < industriesNodeList.snapshotLength; i++) {
+                industriesArr.push(
+                  industriesNodeList.snapshotItem(i).textContent
+                );
+              }
 
               return {
                 name,
                 linkedInProfileUrl,
-                bio,
+                occupation,
                 universityName,
-                location,
                 stats: [stat, stat2],
-                industryNames,
+                industryNames: industriesArr,
               };
             });
 
-            allProfiles.push(profileData);
+            // Clean the scraped data
+            const cleanedData = cleanProfileData(profileData);
+            allProfiles.push(cleanedData);
             await newPage.close();
 
             const fields = [
               "name",
               "linkedInProfileUrl",
-              "bio",
+              "Occupation",
               "universityName",
-              "location",
               "stats",
               "industryNames",
             ];
@@ -168,10 +204,7 @@ const scrapWeb = async () => {
             // Convert all collected data to CSV
             const csvData = json2csv(allProfiles, { fields });
             fs.writeFileSync("results.csv", csvData, "utf8");
-            console.log(
-              "Data successfully written to results.csv",
-              allProfiles
-            );
+            console.log(allProfiles);
           }
         }
       }
@@ -182,12 +215,5 @@ const scrapWeb = async () => {
 
   await browser.close();
 };
-
-// const createCSV = (data) => {
-//   const csvRow = `${data.name},${data.linkedInProfileUrl},${data.bio},${
-//     data.universityName
-//   },${data.location},[${data.stats}],[${data.industryNames.join(" | ")}]\n`;
-//   fs.appendFileSync("results.csv", csvRow, "utf8");
-// };
 
 scrapWeb();
