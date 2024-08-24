@@ -1,12 +1,13 @@
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { json2csv } from "json-2-csv";
-import fs, { link } from "fs";
+import fs from "fs";
 
 puppeteer.use(StealthPlugin());
 
 let loginUrl = "https://www.searchfunder.com/auth/login";
-let targetUrl = "https://www.searchfunder.com/user/list/searcher"; // change the url if needed
+let targetUrl = "https://www.searchfunder.com/searchfund/mysearchfund"; // change the url for scraping investors or searchers accordingly
+
 // Credentials
 const email = "asadujan@gmail.com";
 const password = "Demo5911";
@@ -71,6 +72,11 @@ const scrapWeb = async () => {
       timeout: 60000,
     });
 
+    await page.waitForSelector(".grid-table .list tr", {
+      visible: true,
+      timeout: 120000,
+    });
+
     // Handling HTTP status code 429
     page.on("response", async (response) => {
       if (response.status() === 429) {
@@ -83,9 +89,11 @@ const scrapWeb = async () => {
     });
 
     // Select the region to United States
-    await page.waitForSelector('div[data-region="United States"]');
-    await page.click('div[data-region="United States"]');
-    await sleep(randomDelay(4000, 8000));
+    if (targetUrl === "https://www.searchfunder.com/user/list/searcher") {
+      await page.waitForSelector('div[data-region="United States"]');
+      await page.click('div[data-region="United States"]');
+      await sleep(randomDelay(4000, 8000));
+    }
 
     const cleanProfileData = (profileData) => {
       const cleanedProfileData = {};
@@ -107,7 +115,13 @@ const scrapWeb = async () => {
 
     let isLastPage = false;
     while (!isLastPage) {
-      const nextButton = await page.$("#userListChangePageNext");
+      const nextButton = await page.$(
+        `${
+          targetUrl === "https://www.searchfunder.com/user/list/searcher"
+            ? "#userListChangePageNext"
+            : "#matchListChangePageNext"
+        }`
+      );
       if (nextButton) {
         for (let i = 0; i < 3; i++) {
           await nextButton.click();
