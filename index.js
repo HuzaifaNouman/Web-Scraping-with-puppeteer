@@ -1,7 +1,7 @@
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { json2csv } from "json-2-csv";
-import fs from "fs";
+import fs, { link } from "fs";
 
 puppeteer.use(StealthPlugin());
 
@@ -10,6 +10,14 @@ let targetUrl = "https://www.searchfunder.com/user/list/searcher"; // change the
 // Credentials
 const email = "asadujan@gmail.com";
 const password = "Demo5911";
+
+const randomDelay = (min, max) => {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+const sleep = (milliseconds) => {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+};
 
 const scrapWeb = async () => {
   const browser = await puppeteer.launch({ headless: false });
@@ -22,16 +30,40 @@ const scrapWeb = async () => {
   let allProfiles = []; // all the data after scraping
 
   try {
+    const userAgents = [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:89.0) Gecko/20100101 Firefox/89.0",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (Linux; Android 11; SM-G998U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Mobile Safari/537.36",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
+      "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Mobile Safari/537.36",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 11_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36",
+    ];
+
+    const userAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+    await page.setUserAgent(userAgent);
+
     // Navigate to the login page
     await page.goto(loginUrl, {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
 
+    // Random delay to mimic human behavior
+    await sleep(randomDelay(1000, 3000));
+
     // Enter login credentials
     await page.type('input[name="email"]', email);
+    await sleep(randomDelay(500, 1500));
     await page.type('input[name="password"]', password);
+    await sleep(randomDelay(500, 1500));
     await page.click('button[type="submit"]');
+
+    // Random delay before navigating to the target URL
+    await sleep(randomDelay(3000, 7000));
 
     // Navigate to the user list page
     await page.goto(targetUrl, {
@@ -39,32 +71,21 @@ const scrapWeb = async () => {
       timeout: 60000,
     });
 
-    // // Enter "United States" into the input field
-    // await page.waitForSelector("#listusersearchlocations");
-    // await page.type("#listusersearchlocations", "United States");
-
-    // // Wait for the dropdown list to populate by checking if it contains any div elements
-    // await page.waitForFunction(
-    //   () =>
-    //     document.querySelector("#listuserslocationlist").children.length > 0,
-    //   { timeout: 20000 }
-    // );
-
-    // // Click the first option in the dropdown
-    // await page.evaluate(() => {
-    //   const firstOption = document.querySelector(
-    //     "#listuserslocationlist div.listuserslocation"
-    //   );
-    //   if (firstOption) firstOption.click();
-    // });
-
-    // // Wait for the page to reflect the selection (adjust timeout as needed)
-    // await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Handling HTTP status code 429
+    page.on("response", async (response) => {
+      if (response.status() === 429) {
+        console.log(
+          "status code 429 Too Many Requests - Terminating the script."
+        );
+        await browser.close();
+        process.exit(1); // Exit the script entirely
+      }
+    });
 
     // Select the region to United States
     await page.waitForSelector('div[data-region="United States"]');
     await page.click('div[data-region="United States"]');
-    await new Promise((resolve) => setTimeout(resolve, 6000));
+    await sleep(randomDelay(4000, 8000));
 
     const cleanProfileData = (profileData) => {
       const cleanedProfileData = {};
@@ -90,7 +111,7 @@ const scrapWeb = async () => {
       if (nextButton) {
         for (let i = 0; i < 3; i++) {
           await nextButton.click();
-          await new Promise((resolve) => setTimeout(resolve, 6000));
+          await sleep(randomDelay(5000, 10000));
           // Wait for the next page to load
           await page.waitForSelector(".grid-table .list tr", {
             visible: true,
@@ -113,10 +134,14 @@ const scrapWeb = async () => {
           if (userId) {
             const userProfileUrl = `https://www.searchfunder.com/user/profile/${userId}`;
             const newPage = await browser.newPage();
+            await newPage.setUserAgent(userAgent);
             await newPage.goto(userProfileUrl, {
               waitUntil: "networkidle2",
               timeout: 120000,
             });
+
+            // Random delay to mimic human behavior
+            await sleep(randomDelay(2000, 5000));
 
             // Scrape data from the user profile page
             const profileData = await newPage.evaluate(() => {
@@ -130,36 +155,88 @@ const scrapWeb = async () => {
                   `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(1) div:nth-child(3)`
                 )?.innerText || "";
 
-              const selector =
-                document
-                  .querySelector(
-                    `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(2) a:nth-of-type(2)`
-                  )
-                  .getAttribute("href") || "";
+              const location =
+                document.querySelector(
+                  `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(1) div:nth-child(4)`
+                )?.innerText || "";
 
-              // Split the selector string on '.'
-              const selectorArray = selector.split(".");
+              const followers =
+                document.querySelector(
+                  `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(1) div:nth-child(5)`
+                )?.innerText || "";
 
-              // Remove the 0th index
-              const filteredArray = selectorArray.slice(1);
+              const intro =
+                document.querySelector(`.editprofiledisplay`)?.innerText || "";
 
-              // Combine the 1st and 2nd index elements
-              const linkedInProfileUrl = `${filteredArray[0]}.${filteredArray[1]}`;
+              const linkedInUrl = document.evaluate(
+                "//a[i[contains(@class, 'fa-linkedin-square')]]/@href",
+                document,
+                null,
+                XPathResult.STRING_TYPE,
+                null
+              ).stringValue;
+
+              let linkedInProfileUrl = linkedInUrl;
+              if (linkedInProfileUrl.startsWith("//")) {
+                linkedInProfileUrl = `https:${linkedInProfileUrl}`;
+              } else if (!linkedInProfileUrl.startsWith("https://")) {
+                linkedInProfileUrl = `https://${linkedInProfileUrl}`;
+              }
 
               const universityName =
                 document.querySelector(
                   `.container .row:first-child div:first-child div.panel:first-child .row > div:nth-of-type(2) .row`
                 )?.innerText || "";
 
-              const stat =
-                document.querySelector(
-                  `.container .row div:nth-child(2) .row:nth-of-type(1) div`
-                )?.innerText || "";
+              const dealSizeInitVal = document
+                .evaluate(
+                  "//div[contains(text(), 'deal sizes:')]/span[@class='label label-info'][1]/text()",
+                  document,
+                  null,
+                  XPathResult.STRING_TYPE,
+                  null
+                )
+                .stringValue.trim();
 
-              const stat2 =
-                document.querySelector(
-                  `.container .row div:nth-child(2) .row:nth-of-type(1) div:last-child`
-                )?.innerText || "";
+              const dealSizeFinalVal = document
+                .evaluate(
+                  "//div[contains(text(), 'deal sizes:')]/span[@class='label label-info'][2]/text()",
+                  document,
+                  null,
+                  XPathResult.STRING_TYPE,
+                  null
+                )
+                .stringValue.trim();
+
+              let dealSize =
+                dealSizeInitVal && dealSizeFinalVal
+                  ? `${dealSizeInitVal} to ${dealSizeFinalVal}`
+                  : "";
+
+              const ebitdaInitVal = document
+                .evaluate(
+                  "//div[contains(text(), 'ebitda:')]/span[@class='label label-info'][1]/text()",
+                  document,
+                  null,
+                  XPathResult.STRING_TYPE,
+                  null
+                )
+                .stringValue.trim();
+
+              const ebitdaFinalVal = document
+                .evaluate(
+                  "//div[contains(text(), 'ebitda:')]/span[@class='label label-info'][2]/text()",
+                  document,
+                  null,
+                  XPathResult.STRING_TYPE,
+                  null
+                )
+                .stringValue.trim();
+
+              let ebitda =
+                ebitdaInitVal && ebitdaFinalVal
+                  ? `${ebitdaInitVal} to ${ebitdaFinalVal}`
+                  : "";
 
               // Use document.evaluate to get elements by XPath
               const industriesNodeList = document.evaluate(
@@ -181,8 +258,12 @@ const scrapWeb = async () => {
                 name,
                 linkedInProfileUrl,
                 occupation,
+                location,
                 universityName,
-                stats: [stat, stat2],
+                followers,
+                intro,
+                dealSize,
+                ebitda,
                 industryNames: industriesArr,
               };
             });
@@ -195,9 +276,13 @@ const scrapWeb = async () => {
             const fields = [
               "name",
               "linkedInProfileUrl",
-              "Occupation",
+              "occupation",
+              "location",
               "universityName",
-              "stats",
+              "followers",
+              "intro",
+              "dealSize",
+              "ebitda",
               "industryNames",
             ];
 
