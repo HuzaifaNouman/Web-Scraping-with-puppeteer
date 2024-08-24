@@ -2,6 +2,9 @@ import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { json2csv } from "json-2-csv";
 import fs from "fs";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 puppeteer.use(StealthPlugin());
 
@@ -9,8 +12,8 @@ let loginUrl = "https://www.searchfunder.com/auth/login";
 let targetUrl = "https://www.searchfunder.com/searchfund/mysearchfund"; // change the url for scraping investors or searchers accordingly
 
 // Credentials
-const email = "asadujan@gmail.com";
-const password = "Demo5911";
+const email = process.env.EMAIL;
+const password = process.env.PASSWORD;
 
 const randomDelay = (min, max) => {
   return Math.floor(Math.random() * (max - min + 1)) + min;
